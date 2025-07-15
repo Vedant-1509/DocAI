@@ -1,0 +1,59 @@
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
+build/
+dist/
+
+# Logs
+logs/
+*.log
+debug.log
+*.pid
+*.seed
+*.pid.lock
+
+# Environment variables
+.env
+.env.*.local
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# React-specific
+*.env
+*.env.local
+*.env.development.local
+*.env.test.local
+*.env.production.local
+
+# Coverage
+coverage/
+
+# ESLint cache
+.eslintcache
+
+# Test coverage
+.nyc_output/
+
+# MongoDB dump files
+dump/
+
+# Optional: Ignore build from CRA (if you're using create-react-app in a client/ folder)
+client/build/
+
+# Optional: Ignore server build (if you're compiling TS or bundling server)
+server/dist/

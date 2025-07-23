@@ -14,51 +14,90 @@ import org.json.JSONObject;
 import org.json.JSONArray;
 import org.springframework.web.multipart.MultipartFile;
 
-// QAService.java
+import java.util.UUID;
+
 @Service
 public class QAService {
 
     @Autowired
     WebCrawlerService crawler;
-//    @Autowired
-//    PDFGeneratorService pdfService;
     @Autowired
     EmbeddingService embedder;
     @Autowired
     VectorDBService vectorDb;
 
-    public String processUrl(String url, String userId, String question) {
-        try {
-            String text = crawler.extractTextFromUrl(url);
+public String processUrl(String url, String companyName, String question) {
+    try {
+        if (url == null || url.isBlank()) return "URL cannot be empty.";
 
-            // split the text extracted in to chunks which are overlapping it store the chunk with the meta-data
-            List<String> chunks = splitText(text, 200, 30);
-            int i = 1;
+        // ✅ Step 1: Extract content
+        String text = crawler.extractTextFromUrl(url);
+        System.out.println("Extracted text length: " + text.length());
 
-            // here the chunks are embedded and store in vectorDB
-            for (String chunk : chunks) {
-                JSONArray embedding = embedder.getEmbedding(chunk);
-                Map<String, String> metadata = Map.of("user_id", userId, "text", chunk);// this the metadata
-                vectorDb.upsertVector(userId + "_chunk_" + i++, embedding, metadata);
-            }
+        // ✅ Step 2: Chunk text
+        List<String> chunks = splitText(text, 200, 40); // Increased chunk size and overlap
+        String documentId = UUID.randomUUID().toString();
 
-            if (question != null && !question.isEmpty()) {
-                JSONArray questionEmbedding = embedder.getEmbedding(question);
-                JSONArray matches = vectorDb.queryTopK(questionEmbedding, 3, userId);
-                StringBuilder context = new StringBuilder();
-                for (int j = 0; j < matches.length(); j++) {
-                    context.append(matches.getJSONObject(j).getJSONObject("metadata").getString("text")).append("\n");
-                }
+        int i = 1;
+        for (String chunk : chunks) {
+            JSONArray embedding = embedder.getEmbedding(chunk);
+            String vectorId = companyName + "_" + documentId + "_chunk_" + i++;
 
-                return askLLM(context.toString(), question);
-            }
-            return "PDF indexed successfully.";
-        } catch (Exception e) {
-            e.printStackTrace();
-            return " Failed: " + e.getMessage();
+            Map<String, String> metadata = Map.of(
+                    "companyName", companyName,
+                    "documentId", documentId,
+                    "text", chunk
+            );
+
+            vectorDb.upsertVector(vectorId, embedding, metadata);
         }
+
+        System.out.println("Stored " + chunks.size() + " chunks for URL: " + url);
+
+        // ✅ Step 3: If no question, return early
+        if (question == null || question.trim().isEmpty()) {
+            return "URL indexed successfully. No question provided.";
+        }
+
+        // ✅ Step 4: Embed question
+        JSONArray questionEmbedding = embedder.getEmbedding(question);
+
+        // ✅ Step 5: Query relevant chunks
+        JSONArray matches = vectorDb.queryTopK(questionEmbedding, 5, companyName);
+        if (matches.length() == 0) {
+            return "Sorry, no relevant information found for your question.";
+        }
+
+        // ✅ Step 6: Build context
+        StringBuilder context = new StringBuilder();
+        for (int j = 0; j < matches.length(); j++) {
+            JSONObject match = matches.getJSONObject(j);
+            double score = match.getDouble("score");
+            String matchedText = match.getJSONObject("metadata").getString("text");
+
+            System.out.println("Match #" + (j + 1) + " | Score: " + score);
+
+                context.append(matchedText).append("\n");
+
+        }
+
+        System.out.println("Sending context to LLM"+context);
+
+        if (context.length() == 0) {
+            return "Sorry, the retrieved matches were not strong enough to answer your question.";
+        }
+
+        // ✅ Step 7: Ask LLM
+        return askLLM(context.toString(), question);
+
+    } catch (Exception e) {
+        e.printStackTrace();
+        return "Error while processing URL: " + e.getMessage();
     }
-    // this
+}
+
+
+
     private List<String> splitText(String text, int chunkSize, int overlap) {
         String[] words = text.split("\\s+");
         List<String> chunks = new ArrayList<>();
@@ -73,7 +112,7 @@ public class QAService {
         JSONObject body = new JSONObject();
         body.put("message", question);
         body.put("documents", new JSONArray().put(new JSONObject().put("id", "doc1").put("text", context)));
-        body.put("temperature", 0.5);
+        body.put("temperature", 0.1);
         body.put("stream", false);
 
         HttpRequest request = HttpRequest.newBuilder()
@@ -85,91 +124,119 @@ public class QAService {
 
         HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
 
-        //  Log the response for debugging
-        System.out.println(" Cohere Chat API Response:");
+        System.out.println("Cohere Chat API Response:");
         System.out.println(response.body());
 
         if (response.statusCode() != 200) {
-            return " Cohere API returned error code: " + response.statusCode() + "\n" + response.body();
+            return "Cohere API returned error code: " + response.statusCode() + "\n" + response.body();
         }
 
         JSONObject res = new JSONObject(response.body());
 
-        //  Return the LLM-generated answer or error message
         if (res.has("text")) {
             return res.getString("text");
         } else if (res.has("message")) {
-            return " Cohere returned: " + res.getString("message");
+            return "Cohere returned: " + res.getString("message");
         } else {
-            return " Unexpected response structure:\n" + response.body();
+            return "Unexpected response structure:\n" + response.body();
         }
     }
 
-//this service is for if the pdf is already generated and and question is asked over it
-    public String answerFromExistingData(String userId, String question) {
+    public String answerFromExistingData(String companyName, String question) {
         try {
-            // Step 1-> Embed the question
             JSONArray questionEmbedding = embedder.getEmbedding(question);
+            JSONArray matches = vectorDb.queryTopK(questionEmbedding, 3, companyName);
 
-            // Step 2-> Query Pinecone for this user's similar chunks
-            JSONArray matches = vectorDb.queryTopK(questionEmbedding, 3, userId);
-
-            // Step 3->Combine top chunks to create context
             StringBuilder context = new StringBuilder();
             for (int j = 0; j < matches.length(); j++) {
                 context.append(matches.getJSONObject(j).getJSONObject("metadata").getString("text")).append("\n");
             }
 
-            // Step 4-> Ask LLM
             return askLLM(context.toString(), question);
 
         } catch (Exception e) {
             e.printStackTrace();
-            return " Error while processing your question: " + e.getMessage();
+            return "Error while processing your question: " + e.getMessage();
         }
     }
-
-    public String uploadandask(MultipartFile file, String question, String userId) {
-        try {
-            System.out.println("Received file: " + file.getOriginalFilename());
-            System.out.println("Size: " + file.getSize());
-            System.out.println("Content Type: " + file.getContentType());
-
-            if (file == null || file.isEmpty()) {
-                return "Uploaded file is null or empty";
-            }
-
-            String text = crawler.extractTextFromPDFFile(file);
-            System.out.println("Extracted text length: " + text.length());
-
-            List<String> chunks = splitText(text, 200, 30);
-            int i = 1;
-            for (String chunk : chunks) {
-                JSONArray embedding = embedder.getEmbedding(chunk);
-                Map<String, String> metadata = Map.of("user_id", userId, "text", chunk);
-                vectorDb.upsertVector(userId + "_chunk_" + i++, embedding, metadata);
-            }
-
-            System.out.println("PDF read and uploaded to vector DB successfully.");
-
-            if (question != null && !question.isEmpty()) {
-                JSONArray questionEmbedding = embedder.getEmbedding(question);
-                JSONArray matches = vectorDb.queryTopK(questionEmbedding, 3, userId);
-                StringBuilder context = new StringBuilder();
-                for (int j = 0; j < matches.length(); j++) {
-                    context.append(matches.getJSONObject(j).getJSONObject("metadata").getString("text")).append("\n");
-                }
-
-                return askLLM(context.toString(), question);
-            }
-
-            return "PDF uploaded and indexed successfully, but no question was asked.";
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return "Error while processing PDF: " + e.getMessage();
+public String uploadandask(MultipartFile file, String question, String companyName) {
+    try {
+        if (file == null || file.isEmpty()) {
+            return "Uploaded file is null or empty.";
         }
-    }
 
+        System.out.println("Received file: " + file.getOriginalFilename());
+        System.out.println("Size: " + file.getSize());
+        System.out.println("Content Type: " + file.getContentType());
+
+        // ✅ Extract text from PDF
+        String text = crawler.extractTextFromPDFFile(file);
+        System.out.println("Extracted text length: " + text.length());
+
+        // ✅ Chunking
+        List<String> chunks = splitText(text, 200, 40); // Improved chunk size & overlap
+        String documentId = UUID.randomUUID().toString();
+
+        int i = 1;
+        for (String chunk : chunks) {
+            JSONArray embedding = embedder.getEmbedding(chunk);
+            String vectorId = companyName + "_" + documentId + "_chunk_" + i++;
+
+            Map<String, String> metadata = Map.of(
+                    "companyName", companyName,
+                    "documentId", documentId,
+                    "text", chunk
+            );
+
+            vectorDb.upsertVector(vectorId, embedding, metadata);
+        }
+
+        System.out.println("Stored " + chunks.size() + " chunks to vector DB.");
+
+        // ✅ If no question, return success
+        if (question == null || question.trim().isEmpty()) {
+            return "PDF uploaded and indexed successfully. No question provided.";
+        }
+
+        // ✅ Embed the question
+        JSONArray questionEmbedding = embedder.getEmbedding(question);
+
+        // ✅ Retrieve top-k matching chunks filtered by company name
+        JSONArray matches = vectorDb.queryTopK(questionEmbedding, 5, companyName);
+        if (matches.length() == 0) {
+            return "Sorry, no relevant information found for your question.";
+        }
+
+        // ✅ Build context with score filtering
+        StringBuilder context = new StringBuilder();
+        for (int j = 0; j < matches.length(); j++) {
+            JSONObject match = matches.getJSONObject(j);
+            double score = match.getDouble("score");
+            String matchedText = match.getJSONObject("metadata").getString("text");
+
+            System.out.println("Match #" + (j + 1) + " | Score: " + score);
+             // ✅ use slightly higher threshold for relevance
+                context.append(matchedText).append("\n");
+
+        }
+
+        if (context.length() == 0) {
+            return "Sorry, the retrieved chunks were not relevant enough to answer your question.";
+        }
+
+        // ✅ Ask the LLM
+        System.out.println("Sending context to LLM:\n" + context);
+        String response = askLLM(context.toString(), question);
+
+        return response != null && !response.isBlank()
+                ? response
+                : "LLM could not generate a response.";
+
+    } catch (Exception e) {
+        e.printStackTrace();
+        return "Error while processing PDF: " + e.getMessage();
+    }
 }
 
+
+}

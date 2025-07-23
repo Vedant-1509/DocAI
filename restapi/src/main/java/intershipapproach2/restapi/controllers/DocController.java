@@ -1,6 +1,5 @@
 package intershipapproach2.restapi.controllers;
 
-
 import intershipapproach2.restapi.APIResponse.ApiResponse;
 import intershipapproach2.restapi.services.QAService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,11 +17,11 @@ public class DocController {
     @PostMapping("/crawl-and-ask")
     public ResponseEntity<ApiResponse> handleCrawlAndQuestion(
             @RequestParam String url,
-            @RequestParam String userId,
+            @RequestParam String companyName,
             @RequestParam(required = false) String question) {
 
         try {
-            String answer = qaService.processUrl(url, userId, question);
+            String answer = qaService.processUrl(url, companyName, question);
             return ResponseEntity.ok(new ApiResponse(true, "Answer generated from crawled URL", answer));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(new ApiResponse(false, "Failed to process URL", null));
@@ -31,11 +30,11 @@ public class DocController {
 
     @PostMapping("/ask")
     public ResponseEntity<ApiResponse> askOnly(
-            @RequestParam String userId,
+            @RequestParam String companyName,
             @RequestParam String question) {
 
         try {
-            String answer = qaService.answerFromExistingData(userId, question);
+            String answer = qaService.answerFromExistingData(companyName, question);
             return ResponseEntity.ok(new ApiResponse(true, "Answer fetched from stored data", answer));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(new ApiResponse(false, "Failed to answer question", null));
@@ -46,10 +45,10 @@ public class DocController {
     public ResponseEntity<ApiResponse> askFromUploadedFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam("question") String question,
-            @RequestParam("userId") String userId) {
+            @RequestParam("companyName") String companyName) {
 
         try {
-            String answer = qaService.uploadandask(file, question, userId);
+            String answer = qaService.uploadandask(file, question, companyName);
             return ResponseEntity.ok(new ApiResponse(true, "Answer generated from uploaded file", answer));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(new ApiResponse(false, "Failed to process file", null));

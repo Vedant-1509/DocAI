@@ -2,6 +2,7 @@ package intershipapproach2.restapi.services;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -17,8 +18,10 @@ import java.util.Map;
 @Service
 public class VectorDBService {
 
-    private final String apiKey = "pcsk_4MNais_1yu6Qi3PqAj5RxhiGQYcT2dM8bYtmV746y25DQfsMqPxDvwoqpM4sSfs756eUC";
-    private final String indexUrl = "https://docai-vwyabpy.svc.aped-4627-b74a.pinecone.io";
+    @Value("${pinecone.api.key}")
+     private  String apiKey;
+    @Value("${pinecone.index.url}")
+    private String indexUrl ;
 
     public void upsertVector(String id, JSONArray embedding, Map<String, String> metadata) throws IOException, InterruptedException {
         JSONObject vector = new JSONObject();
@@ -40,27 +43,30 @@ public class VectorDBService {
         client.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
-    public JSONArray queryTopK(JSONArray queryEmbedding, int topK, String userId) throws Exception {
-        JSONObject filter = new JSONObject();
-        filter.put("user_id", userId);
 
-        JSONObject body = new JSONObject();
-        body.put("vector", queryEmbedding);
-        body.put("topK", topK);
-        body.put("includeMetadata", true);
-        body.put("filter", filter);
+public JSONArray queryTopK(JSONArray queryEmbedding, int topK, String companyName) throws Exception {
+    JSONObject filter = new JSONObject();
+    filter.put("companyName", companyName);  // updated filter key
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(indexUrl + "/query"))
-                .header("Api-Key", apiKey)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
-                .build();
+    JSONObject body = new JSONObject();
+    body.put("vector", queryEmbedding);
+    body.put("topK", topK);
+    body.put("includeMetadata", true);
+    body.put("filter", filter);
 
-        HttpClient client = HttpClient.newHttpClient();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        JSONObject responseBody = new JSONObject(response.body());
-        return responseBody.getJSONArray("matches");
-    }
+    HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(indexUrl + "/query"))
+            .header("Api-Key", apiKey)
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+            .build();
+
+    HttpClient client = HttpClient.newHttpClient();
+    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+    JSONObject responseBody = new JSONObject(response.body());
+    return responseBody.getJSONArray("matches");
+}
+
 }
 

@@ -1,7 +1,4 @@
 package intershipapproach2.restapi.APIResponse;
-
-
-
 public class ApiResponse {
     private boolean success;
     private String message;

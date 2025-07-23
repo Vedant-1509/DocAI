@@ -1,7 +1,9 @@
 package intershipapproach2.restapi.services;
 
+
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.net.http.HttpClient;
@@ -11,9 +13,10 @@ import java.net.URI;
 
 @Service
 public class EmbeddingService {
-
-    private static final String API_KEY = "3a19B6a68opXSRpS8ZWzY2vFoOpooAZzIkpV020s";  // Replace with env variable later
-    private static final String EMBEDDING_ENDPOINT = "https://api.cohere.ai/v1/embed";
+    @Value("${cohere.api.key}")
+    private  String API_KEY ;  // Replace with env variable later
+    @Value("${cohere.embedding.endpoint}")
+    private  String EMBEDDING_ENDPOINT ;
 
     public JSONArray getEmbedding(String text) throws Exception {
         JSONObject body = new JSONObject();
